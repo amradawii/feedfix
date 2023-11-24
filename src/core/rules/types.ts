@@ -1,5 +1,6 @@
 import { CatalogModel, Platform } from '../model';
 import { ParsedCsv } from '../parse';
+import { GoogleTaxonomy } from '../platforms/google-taxonomy';
 
 export type Severity = 'fail' | 'reject' | 'tip';
 
@@ -59,6 +60,7 @@ export interface RuleMeta {
 export interface RuleContext {
   parsed: ParsedCsv;
   catalog: CatalogModel;
+  googleTaxonomy?: GoogleTaxonomy;
 }
 
 export interface RuleRunner {

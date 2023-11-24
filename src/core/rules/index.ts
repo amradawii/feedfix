@@ -1,9 +1,14 @@
 import { CatalogModel } from '../model';
 import { ParsedCsv } from '../parse';
+import { GoogleTaxonomy, loadGoogleTaxonomy } from '../platforms/google-taxonomy';
 import { BARCODE_RULES } from './barcode';
+import { CATEGORY_RULES } from './category';
 import { FILE_RULES } from './file';
 import { IDENTITY_RULES } from './identity';
+import { LINK_RULES } from './links';
 import { PRICE_RULES } from './price';
+import { REQUIRED_RULES } from './required';
+import { TEXT_RULES } from './text';
 import {
   Problem,
   ProblemGroup,
@@ -13,13 +18,23 @@ import {
   RuleSummaryCounts,
   Severity,
 } from './types';
+import { VALUE_RULES } from './values';
+import { VARIANT_RULES } from './variants';
 
-export const CORE_RULES: RuleRunner[] = [
+export const ALL_RULES: RuleRunner[] = [
   ...FILE_RULES,
+  ...REQUIRED_RULES,
   ...IDENTITY_RULES,
   ...PRICE_RULES,
   ...BARCODE_RULES,
+  ...TEXT_RULES,
+  ...LINK_RULES,
+  ...VARIANT_RULES,
+  ...VALUE_RULES,
+  ...CATEGORY_RULES,
 ];
+
+export const CORE_RULES = ALL_RULES;
 
 const SEVERITY_ORDER: Record<Severity, number> = {
   fail: 0,
@@ -27,17 +42,25 @@ const SEVERITY_ORDER: Record<Severity, number> = {
   tip: 2,
 };
 
-const RULES_BY_ID = new Map<string, RuleMeta>(CORE_RULES.map((r) => [r.meta.id, r.meta]));
+const RULES_BY_ID = new Map<string, RuleMeta>(ALL_RULES.map((r) => [r.meta.id, r.meta]));
 
 export function getRuleMeta(ruleId: string): RuleMeta | undefined {
   return RULES_BY_ID.get(ruleId);
 }
 
+export interface RunRulesOptions {
+  rules?: RuleRunner[];
+  googleTaxonomy?: GoogleTaxonomy;
+}
+
 export function runRules(
   parsed: ParsedCsv,
   catalog: CatalogModel,
-  rules: RuleRunner[] = CORE_RULES,
+  optionsOrRules?: RunRulesOptions | RuleRunner[],
 ): RuleEngineResult {
+  const rules = Array.isArray(optionsOrRules) ? optionsOrRules : optionsOrRules?.rules ?? ALL_RULES;
+  const googleTaxonomy = Array.isArray(optionsOrRules) ? undefined : optionsOrRules?.googleTaxonomy;
+
   const problems: Problem[] = [];
   const metaMap = new Map<string, RuleMeta>();
 
@@ -46,7 +69,7 @@ export function runRules(
     if (!runner.meta.platforms.includes(catalog.platform)) {
       continue;
     }
-    const found = runner.run({ parsed, catalog });
+    const found = runner.run({ parsed, catalog, googleTaxonomy });
     for (const p of found) {
       problems.push(p);
     }
@@ -100,6 +123,20 @@ export function runRules(
   return { problems, groups, counts };
 }
 
+/**
+ * Runs all rules, lazy-loading the official 2021-09-21 Google Product Taxonomy
+ * only when a Google Merchant Center feed is being checked.
+ */
+export async function runRulesAsync(
+  parsed: ParsedCsv,
+  catalog: CatalogModel,
+  rules: RuleRunner[] = ALL_RULES,
+): Promise<RuleEngineResult> {
+  const googleTaxonomy = catalog.platform === 'google' ? await loadGoogleTaxonomy() : undefined;
+  return runRules(parsed, catalog, { rules, googleTaxonomy });
+}
+
 export * from './types';
 export { parsePriceValue, normalizeArabicDigits } from './price';
 export { computeGs1CheckDigit, isValidGs1CheckDigit, tryRestoreLeadingZero } from './barcode';
+export { loadGoogleTaxonomy } from '../platforms/google-taxonomy';

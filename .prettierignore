@@ -2,3 +2,4 @@ dist
 coverage
 package-lock.json
 feedfix_plan.md
+src/core/data/*.txt
