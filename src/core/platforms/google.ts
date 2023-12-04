@@ -11,6 +11,7 @@ import {
   Variant,
 } from '../model';
 import { ParsedCsv } from '../parse';
+import { parsePriceValue } from '../rules/price';
 
 export const GOOGLE_COLUMN_ALIASES: Record<string, string[]> = {
   id: ['id'],
@@ -229,4 +230,196 @@ export function readGoogleCatalog(parsed: ParsedCsv): CatalogModel {
     columnMap,
     extraColumns,
   };
+}
+
+export interface GoogleExportOptions {
+  /** Optional store base URL used ONLY where links can be derived exactly (e.g. Shopify /products/<handle>) */
+  storeBaseUrl?: string;
+  /** Optional 3-letter ISO-4217 currency code (e.g. USD, EGP, EUR) */
+  currencyCode?: string;
+}
+
+export const GOOGLE_EXPORT_HEADERS = [
+  'id',
+  'item_group_id',
+  'title',
+  'description',
+  'link',
+  'image_link',
+  'additional_image_link',
+  'availability',
+  'availability_date',
+  'price',
+  'sale_price',
+  'brand',
+  'gtin',
+  'mpn',
+  'identifier_exists',
+  'condition',
+  'google_product_category',
+  'product_type',
+  'color',
+  'size',
+  'material',
+  'pattern',
+  'shipping_weight',
+] as const;
+
+function stripHtmlForGoogle(html: string | undefined): string {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/p>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function formatGooglePrice(raw: string | undefined, fallbackCurrency?: string): string {
+  if (!raw) return '';
+  const parsed = parsePriceValue(raw);
+  if (!parsed.ok) return raw.trim();
+  const currency = parsed.isoCurrency ?? fallbackCurrency?.trim().toUpperCase();
+  return currency ? `${parsed.normalizedNumber} ${currency}` : parsed.normalizedNumber;
+}
+
+function mapAvailabilityToGoogle(variant: Variant): string {
+  const raw = variant.availability?.value.trim().toLowerCase();
+  if (raw) {
+    if (raw === 'in_stock' || raw === 'in stock' || raw === '1' || raw === 'true') {
+      return 'in_stock';
+    }
+    if (raw === 'out_of_stock' || raw === 'out of stock' || raw === '0' || raw === 'false') {
+      return 'out_of_stock';
+    }
+    if (raw === 'preorder' || raw === 'pre-order' || raw === 'pre order') {
+      return 'preorder';
+    }
+    if (raw === 'backorder' || raw === 'on backorder' || raw === 'back-order') {
+      return 'backorder';
+    }
+  }
+
+  if (variant.inventoryQty?.value) {
+    const qty = Number(variant.inventoryQty.value);
+    if (Number.isFinite(qty)) {
+      if (qty > 0) return 'in_stock';
+      if (variant.inventoryPolicy?.value.toLowerCase() === 'continue') return 'backorder';
+      return 'out_of_stock';
+    }
+  }
+
+  return '';
+}
+
+function deriveGoogleLink(
+  catalogPlatform: CatalogModel['platform'],
+  product: Product,
+  variant: Variant,
+  storeBaseUrl?: string,
+): string {
+  if (variant.link?.value) return variant.link.value;
+  if (product.link?.value) return product.link.value;
+
+  // Derive link ONLY where the platform URL pattern is exact (Shopify: base + /products/ + handle).
+  // Never invent links for WooCommerce or other CSVs.
+  if (catalogPlatform === 'shopify' && storeBaseUrl?.trim() && product.handle?.value) {
+    const base = storeBaseUrl.trim().replace(/\/+$/, '');
+    return `${base}/products/${encodeURIComponent(product.handle.value)}`;
+  }
+
+  return '';
+}
+
+function findVariantAttr(variant: Variant, names: string[]): string {
+  for (const ov of variant.optionValues) {
+    if (names.includes(ov.name.trim().toLowerCase())) {
+      return ov.value.value;
+    }
+  }
+  return '';
+}
+
+export function writeGoogleCatalog(
+  catalog: CatalogModel,
+  options: GoogleExportOptions = {},
+): { headers: string[]; rows: string[][] } {
+  const headers = [...GOOGLE_EXPORT_HEADERS];
+  const rows: string[][] = [];
+  const currency = options.currencyCode?.trim().toUpperCase() || undefined;
+
+  for (let pIdx = 0; pIdx < catalog.products.length; pIdx++) {
+    const product = catalog.products[pIdx];
+    const variants: Variant[] =
+      product.variants.length > 0
+        ? product.variants
+        : [{ sourceRow: product.sourceRow, optionValues: [] }];
+
+    const isMultiVariant = variants.length > 1;
+    const groupId =
+      product.itemGroupId?.value ??
+      (isMultiVariant ? product.handle?.value ?? product.id?.value ?? `group-${pIdx + 1}` : '');
+
+    const description = stripHtmlForGoogle(
+      product.descriptionHtml?.value ?? product.shortDescription?.value,
+    );
+
+    const productImages = product.images.map((i) => i.url.value);
+    const productType =
+      product.productType?.value ??
+      (product.categories.length > 0 ? product.categories[0].value : '');
+
+    for (let vIdx = 0; vIdx < variants.length; vIdx++) {
+      const variant = variants[vIdx];
+      const itemId =
+        variant.id?.value ??
+        variant.sku?.value ??
+        (isMultiVariant && product.handle?.value
+          ? `${product.handle.value}-${vIdx + 1}`
+          : product.handle?.value ?? '');
+
+      const primaryImage = variant.image?.value ?? productImages[0] ?? '';
+      const additionalImages = productImages.filter((u) => u !== primaryImage).join(', ');
+
+      const link = deriveGoogleLink(catalog.platform, product, variant, options.storeBaseUrl);
+      const weight =
+        variant.weightGrams !== undefined && variant.weightGrams !== null
+          ? `${variant.weightGrams} g`
+          : variant.weight?.value ?? '';
+
+      rows.push([
+        itemId,
+        groupId,
+        product.title?.value ?? '',
+        description,
+        link,
+        primaryImage,
+        additionalImages,
+        mapAvailabilityToGoogle(variant),
+        variant.availabilityDate?.value ?? '',
+        formatGooglePrice(variant.regularPrice?.value, currency),
+        formatGooglePrice(variant.salePrice?.value, currency),
+        product.vendor?.value ?? '',
+        variant.barcode?.value ?? '',
+        variant.mpn?.value ?? '',
+        variant.identifierExists?.value ?? '',
+        variant.condition?.value ?? '',
+        product.productCategory?.value ?? '',
+        productType,
+        findVariantAttr(variant, ['color', 'colour']),
+        findVariantAttr(variant, ['size']),
+        findVariantAttr(variant, ['material']),
+        findVariantAttr(variant, ['pattern']),
+        weight,
+      ]);
+    }
+  }
+
+  return { headers, rows };
 }

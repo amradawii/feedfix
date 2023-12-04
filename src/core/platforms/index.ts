@@ -123,6 +123,11 @@ export function readCatalog(
   }
 }
 
-export { readShopifyCatalog } from './shopify';
-export { readWooCommerceCatalog } from './woocommerce';
-export { readGoogleCatalog } from './google';
+export { readShopifyCatalog, writeShopifyCatalog, SHOPIFY_EXPORT_HEADERS } from './shopify';
+export { readWooCommerceCatalog, writeWooCommerceCatalog } from './woocommerce';
+export {
+  readGoogleCatalog,
+  writeGoogleCatalog,
+  GOOGLE_EXPORT_HEADERS,
+  type GoogleExportOptions,
+} from './google';

@@ -11,6 +11,7 @@ import {
   Variant,
 } from '../model';
 import { ParsedCsv } from '../parse';
+import { parsePriceValue } from '../rules/price';
 
 export const SHOPIFY_MAX_OPTIONS_2023 = 3;
 export const SHOPIFY_MAX_VARIANTS_2023 = 100;
@@ -344,4 +345,200 @@ export function readShopifyCatalog(parsed: ParsedCsv): CatalogModel {
     columnMap,
     extraColumns,
   };
+}
+
+export const SHOPIFY_EXPORT_HEADERS = [
+  'Handle',
+  'Title',
+  'Body (HTML)',
+  'Vendor',
+  'Product Category',
+  'Type',
+  'Tags',
+  'Published',
+  'Option1 Name',
+  'Option1 Value',
+  'Option2 Name',
+  'Option2 Value',
+  'Option3 Name',
+  'Option3 Value',
+  'Variant SKU',
+  'Variant Grams',
+  'Variant Inventory Tracker',
+  'Variant Inventory Qty',
+  'Variant Inventory Policy',
+  'Variant Fulfillment Service',
+  'Variant Price',
+  'Variant Compare At Price',
+  'Variant Barcode',
+  'Image Src',
+  'Image Position',
+  'Image Alt Text',
+  'Variant Image',
+  'Variant Weight Unit',
+  'Status',
+] as const;
+
+function slugifyHandle(input: string, fallbackIndex: number): string {
+  const cleaned = input
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '');
+  return cleaned || `product-${fallbackIndex}`;
+}
+
+function formatCleanDecimalPrice(raw: string | undefined): string {
+  if (!raw) return '';
+  const parsed = parsePriceValue(raw);
+  return parsed.ok ? parsed.normalizedNumber : raw.trim();
+}
+
+function mapStatusToShopify(rawStatus: string | undefined): { status: string; published: string } {
+  if (!rawStatus) return { status: 'active', published: 'TRUE' };
+  const lower = rawStatus.trim().toLowerCase();
+  if (lower === 'draft' || lower === '-1' || lower === 'false' || lower === '0') {
+    return { status: 'draft', published: 'FALSE' };
+  }
+  if (lower === 'archived') {
+    return { status: 'archived', published: 'FALSE' };
+  }
+  return { status: 'active', published: 'TRUE' };
+}
+
+export function writeShopifyCatalog(catalog: CatalogModel): {
+  headers: string[];
+  rows: string[][];
+} {
+  const headers = [...SHOPIFY_EXPORT_HEADERS];
+  const rows: string[][] = [];
+  const usedHandles = new Set<string>();
+
+  for (let pIdx = 0; pIdx < catalog.products.length; pIdx++) {
+    const product = catalog.products[pIdx];
+    const baseHandle =
+      product.handle?.value.trim() ||
+      slugifyHandle(
+        product.itemGroupId?.value || product.title?.value || product.id?.value || '',
+        pIdx + 1,
+      );
+
+    let handle = baseHandle;
+    let suffix = 2;
+    while (usedHandles.has(handle)) {
+      handle = `${baseHandle}-${suffix++}`;
+    }
+    usedHandles.add(handle);
+
+    const { status, published } = mapStatusToShopify(product.status?.value);
+    const finalPublished =
+      product.published?.value.toUpperCase() === 'FALSE'
+        ? 'FALSE'
+        : product.published?.value.toUpperCase() === 'TRUE'
+        ? 'TRUE'
+        : published;
+
+    const productOptions = product.options.slice(0, SHOPIFY_MAX_OPTIONS_2023);
+    const variants: Variant[] =
+      product.variants.length > 0
+        ? product.variants
+        : [{ sourceRow: product.sourceRow, optionValues: [] }];
+
+    const isSingleDefault =
+      variants.length === 1 &&
+      (variants[0].isDefaultVariant ||
+        (productOptions.length === 0 && variants[0].optionValues.length === 0));
+
+    const optNames = isSingleDefault
+      ? ['Title', '', '']
+      : [
+          productOptions[0]?.name ?? variants[0].optionValues[0]?.name ?? '',
+          productOptions[1]?.name ?? variants[0].optionValues[1]?.name ?? '',
+          productOptions[2]?.name ?? variants[0].optionValues[2]?.name ?? '',
+        ];
+
+    const firstImage = product.images[0];
+    const extraImages = product.images.slice(1);
+
+    for (let vIdx = 0; vIdx < variants.length; vIdx++) {
+      const variant = variants[vIdx];
+      const isFirst = vIdx === 0;
+
+      const optVals = isSingleDefault
+        ? ['Default Title', '', '']
+        : [0, 1, 2].map((oIdx) => {
+            const name = optNames[oIdx];
+            if (!name) return '';
+            const matched = variant.optionValues.find(
+              (ov) => ov.name.toLowerCase() === name.toLowerCase(),
+            );
+            return matched?.value.value ?? variant.optionValues[oIdx]?.value.value ?? '';
+          });
+
+      // Explicit Shopify price mapping:
+      // On sale -> Variant Price = salePrice, Variant Compare At Price = regularPrice
+      // Not on sale -> Variant Price = regularPrice, Variant Compare At Price = ''
+      const hasSale = Boolean(variant.salePrice?.value);
+      const variantPrice = hasSale
+        ? formatCleanDecimalPrice(variant.salePrice?.value)
+        : formatCleanDecimalPrice(variant.regularPrice?.value);
+      const compareAtPrice = hasSale ? formatCleanDecimalPrice(variant.regularPrice?.value) : '';
+
+      const grams =
+        variant.weightGrams !== undefined && variant.weightGrams !== null
+          ? String(variant.weightGrams)
+          : variant.weight?.value ?? '';
+
+      const qty = variant.inventoryQty?.value ?? '';
+      const tracker = variant.inventoryTracker?.value ?? (qty ? 'shopify' : '');
+      const policy = variant.inventoryPolicy?.value.toLowerCase() || 'deny';
+      const fulfillment = variant.fulfillmentService?.value || 'manual';
+
+      const row = [
+        handle,
+        isFirst ? product.title?.value ?? '' : '',
+        isFirst ? product.descriptionHtml?.value ?? '' : '',
+        isFirst ? product.vendor?.value ?? '' : '',
+        isFirst ? product.productCategory?.value ?? '' : '',
+        isFirst ? product.productType?.value ?? '' : '',
+        isFirst ? product.tags.map((t) => t.value).join(', ') : '',
+        isFirst ? finalPublished : '',
+        isFirst ? optNames[0] : optNames[0] ? optNames[0] : '',
+        optVals[0],
+        isFirst ? optNames[1] : optNames[1] ? optNames[1] : '',
+        optVals[1],
+        isFirst ? optNames[2] : optNames[2] ? optNames[2] : '',
+        optVals[2],
+        variant.sku?.value ?? '',
+        grams,
+        tracker,
+        qty,
+        policy,
+        fulfillment,
+        variantPrice,
+        compareAtPrice,
+        variant.barcode?.value ?? '',
+        isFirst ? firstImage?.url.value ?? '' : '',
+        isFirst && firstImage ? firstImage.position?.value ?? '1' : '',
+        isFirst ? firstImage?.alt?.value ?? '' : '',
+        variant.image && variant.image.value !== firstImage?.url.value ? variant.image.value : '',
+        grams ? 'g' : '',
+        isFirst ? status : '',
+      ];
+
+      rows.push(row);
+    }
+
+    for (let imgIdx = 0; imgIdx < extraImages.length; imgIdx++) {
+      const img = extraImages[imgIdx];
+      const imgRow = new Array<string>(headers.length).fill('');
+      imgRow[0] = handle;
+      imgRow[23] = img.url.value;
+      imgRow[24] = img.position?.value ?? String(imgIdx + 2);
+      imgRow[25] = img.alt?.value ?? '';
+      rows.push(imgRow);
+    }
+  }
+
+  return { headers, rows };
 }

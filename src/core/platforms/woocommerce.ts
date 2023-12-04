@@ -11,6 +11,7 @@ import {
   Variant,
 } from '../model';
 import { ParsedCsv } from '../parse';
+import { parsePriceValue } from '../rules/price';
 
 export const WOOCOMMERCE_COLUMN_ALIASES: Record<string, string[]> = {
   id: ['id'],
@@ -362,4 +363,252 @@ export function readWooCommerceCatalog(parsed: ParsedCsv): CatalogModel {
     columnMap,
     extraColumns,
   };
+}
+
+const WOO_BASE_EXPORT_HEADERS = [
+  'ID',
+  'Type',
+  'SKU',
+  'Name',
+  'Published',
+  'Is featured?',
+  'Visibility in catalog',
+  'Short description',
+  'Description',
+  'In stock?',
+  'Stock',
+  'Weight (kg)',
+  'Sale price',
+  'Regular price',
+  'Categories',
+  'Tags',
+  'Images',
+  'Parent',
+] as const;
+
+function formatCleanWooPrice(raw: string | undefined): string {
+  if (!raw) return '';
+  const parsed = parsePriceValue(raw);
+  return parsed.ok ? parsed.normalizedNumber : raw.trim();
+}
+
+function formatGramsAsKg(grams: number | null | undefined): string {
+  if (grams === undefined || grams === null) return '';
+  // Integer-based conversion to avoid floating-point artifacts
+  const whole = Math.floor(grams / 1000);
+  const rem = grams % 1000;
+  if (rem === 0) return String(whole);
+  const frac = String(rem).padStart(3, '0').replace(/0+$/, '');
+  return `${whole}.${frac}`;
+}
+
+function mapStatusToWooPublished(rawStatus: string | undefined): string {
+  if (!rawStatus) return '1';
+  const lower = rawStatus.trim().toLowerCase();
+  if (lower === '1' || lower === 'active' || lower === 'true' || lower === 'published') return '1';
+  if (lower === '0' || lower === 'private') return '0';
+  if (lower === '2' || lower === 'pending') return '2';
+  if (lower === '-1' || lower === 'draft' || lower === 'archived' || lower === 'false') return '-1';
+  return '1';
+}
+
+function mapAvailabilityToWooInStock(variant: Variant): string {
+  const avail = variant.availability?.value.trim().toLowerCase();
+  if (avail) {
+    if (avail === '1' || avail === 'in_stock' || avail === 'in stock' || avail === 'true') {
+      return '1';
+    }
+    if (
+      avail === '0' ||
+      avail === 'out_of_stock' ||
+      avail === 'out of stock' ||
+      avail === 'false'
+    ) {
+      return '0';
+    }
+    if (avail === 'backorder' || avail === 'on backorder') {
+      return 'backorder';
+    }
+  }
+  if (variant.inventoryQty?.value) {
+    const qty = Number(variant.inventoryQty.value);
+    if (Number.isFinite(qty)) {
+      if (qty > 0) return '1';
+      if (variant.inventoryPolicy?.value.toLowerCase() === 'continue') return 'backorder';
+      return '0';
+    }
+  }
+  return '';
+}
+
+/**
+ * Writes products in late-2023 WooCommerce 8.2/8.3 built-in CSV importer format.
+ * Intentionally omits GTIN/barcode and Brand columns (neither existed in WooCommerce core in 2023).
+ */
+export function writeWooCommerceCatalog(catalog: CatalogModel): {
+  headers: string[];
+  rows: string[][];
+} {
+  let maxAttrs = 0;
+  for (const product of catalog.products) {
+    const nonDefaultOptions = product.options.filter(
+      (o) =>
+        !(
+          o.name.toLowerCase() === 'title' &&
+          o.values.length === 1 &&
+          o.values[0].toLowerCase() === 'default title'
+        ),
+    );
+    if (nonDefaultOptions.length > maxAttrs) {
+      maxAttrs = nonDefaultOptions.length;
+    }
+  }
+
+  const headers: string[] = [...WOO_BASE_EXPORT_HEADERS];
+  for (let a = 1; a <= maxAttrs; a++) {
+    headers.push(
+      `Attribute ${a} name`,
+      `Attribute ${a} value(s)`,
+      `Attribute ${a} visible`,
+      `Attribute ${a} global`,
+    );
+  }
+
+  const rows: string[][] = [];
+
+  for (let pIdx = 0; pIdx < catalog.products.length; pIdx++) {
+    const product = catalog.products[pIdx];
+    const published = mapStatusToWooPublished(product.status?.value);
+    const categories =
+      product.categories.length > 0
+        ? product.categories.map((c) => c.value).join(', ')
+        : product.productCategory?.value ?? product.productType?.value ?? '';
+    const tags = product.tags.map((t) => t.value).join(', ');
+    const images = product.images.map((img) => img.url.value).join(', ');
+
+    const nonDefaultOptions = product.options.filter(
+      (o) =>
+        !(
+          o.name.toLowerCase() === 'title' &&
+          o.values.length === 1 &&
+          o.values[0].toLowerCase() === 'default title'
+        ),
+    );
+
+    const isVariable =
+      product.variants.length > 1 ||
+      (product.wooType?.value.toLowerCase().includes('variable') ?? false);
+
+    if (!isVariable) {
+      const v = product.variants[0];
+      const baseRow = [
+        product.id?.value ?? '',
+        product.wooType?.value ?? 'simple',
+        v?.sku?.value ?? '',
+        product.title?.value ?? '',
+        published,
+        '0',
+        'visible',
+        product.shortDescription?.value ?? '',
+        product.descriptionHtml?.value ?? '',
+        v ? mapAvailabilityToWooInStock(v) : '',
+        v?.inventoryQty?.value ?? '',
+        formatGramsAsKg(v?.weightGrams),
+        formatCleanWooPrice(v?.salePrice?.value),
+        formatCleanWooPrice(v?.regularPrice?.value),
+        categories,
+        tags,
+        images || (v?.image?.value ?? ''),
+        '',
+      ];
+      for (let a = 0; a < maxAttrs; a++) {
+        const opt = nonDefaultOptions[a];
+        if (opt) {
+          baseRow.push(opt.name, opt.values.join(', '), '1', '1');
+        } else {
+          baseRow.push('', '', '', '');
+        }
+      }
+      rows.push(baseRow);
+      continue;
+    }
+
+    const parentSku =
+      product.handle?.value || product.itemGroupId?.value || product.id?.value || `VAR-${pIdx + 1}`;
+
+    const parentRow = [
+      product.id?.value ?? '',
+      'variable',
+      parentSku,
+      product.title?.value ?? '',
+      published,
+      '0',
+      'visible',
+      product.shortDescription?.value ?? '',
+      product.descriptionHtml?.value ?? '',
+      '1',
+      '',
+      formatGramsAsKg(product.variants[0]?.weightGrams),
+      '',
+      '',
+      categories,
+      tags,
+      images,
+      '',
+    ];
+
+    for (let a = 0; a < maxAttrs; a++) {
+      const opt = nonDefaultOptions[a];
+      if (opt) {
+        parentRow.push(opt.name, opt.values.join(', '), '1', '1');
+      } else {
+        parentRow.push('', '', '', '');
+      }
+    }
+    rows.push(parentRow);
+
+    for (const variant of product.variants) {
+      const suffix = variant.optionValues.map((ov) => ov.value.value).join(' - ');
+      const varName =
+        product.title?.value && suffix
+          ? `${product.title.value} - ${suffix}`
+          : product.title?.value ?? '';
+
+      const varRow = [
+        variant.id?.value ?? '',
+        'variation',
+        variant.sku?.value ?? '',
+        varName,
+        published,
+        '0',
+        'visible',
+        '',
+        '',
+        mapAvailabilityToWooInStock(variant),
+        variant.inventoryQty?.value ?? '',
+        formatGramsAsKg(variant.weightGrams),
+        formatCleanWooPrice(variant.salePrice?.value),
+        formatCleanWooPrice(variant.regularPrice?.value),
+        '',
+        '',
+        variant.image?.value ?? '',
+        parentSku,
+      ];
+
+      for (let a = 0; a < maxAttrs; a++) {
+        const opt = nonDefaultOptions[a];
+        if (opt) {
+          const ov = variant.optionValues.find(
+            (item) => item.name.toLowerCase() === opt.name.toLowerCase(),
+          );
+          varRow.push(opt.name, ov?.value.value ?? '', '', '1');
+        } else {
+          varRow.push('', '', '', '');
+        }
+      }
+      rows.push(varRow);
+    }
+  }
+
+  return { headers, rows };
 }
