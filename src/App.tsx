@@ -1,11 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { acceptSafeFixes, FixPlan } from './core/fixes';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  acceptSafeFixes,
+  applyFixes,
+  ChangeStatus,
+  FixPlan,
+  setChangeStatus,
+  setRuleStatus,
+} from './core/fixes';
 import { Platform } from './core/model';
 import { DetectedDelimiter } from './core/parse';
+import { readCatalog } from './core/platforms';
 import { SampleFeed } from './samples';
 import { DetectionBar } from './ui/DetectionBar';
 import { DropZone } from './ui/DropZone';
+import { DownloadPayload, ExportPanel } from './ui/ExportPanel';
 import { ProblemsList } from './ui/ProblemsList';
+import { ReviewTable } from './ui/ReviewTable';
 import { StepId, Stepper } from './ui/Stepper';
 import { WhyNotChatbot } from './ui/WhyNotChatbot';
 import { CsvWorkerClient } from './worker/client';
@@ -17,13 +27,18 @@ const STAGE_LABELS: Record<'decoding' | 'parsing' | 'checking', string> = {
   checking: 'Running platform rules…',
 };
 
-export default function App() {
+interface AppProps {
+  onDownloadFile?: (payload: DownloadPayload) => void;
+}
+
+export default function App({ onDownloadFile }: AppProps = {}) {
   const workerRef = useRef<CsvWorkerClient | null>(null);
   const rawBufferRef = useRef<ArrayBuffer | null>(null);
 
   const [step, setStep] = useState<StepId>('upload');
   const [analysis, setAnalysis] = useState<AnalysisResultPayload | null>(null);
   const [fixPlan, setFixPlan] = useState<FixPlan>({ changes: [] });
+  const [reviewRuleFilter, setReviewRuleFilter] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [progressText, setProgressText] = useState<string | null>(null);
   const [progressPercent, setProgressPercent] = useState(0);
@@ -45,7 +60,6 @@ export default function App() {
       options: { delimiter?: DetectedDelimiter; platformOverride?: Platform } = {},
     ) => {
       if (!workerRef.current) return;
-      // Retain a copy so delimiter overrides can re-parse cleanly without re-uploading.
       rawBufferRef.current = buffer.slice(0);
       setIsBusy(true);
       setErrorMessage(null);
@@ -67,6 +81,7 @@ export default function App() {
         });
         setAnalysis(result);
         setFixPlan(result.fixPlan);
+        setReviewRuleFilter(null);
         setStep('problems');
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : 'Could not read this file.');
@@ -109,6 +124,7 @@ export default function App() {
         });
         setAnalysis(result);
         setFixPlan(result.fixPlan);
+        setReviewRuleFilter(null);
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : 'Could not switch format.');
       } finally {
@@ -133,6 +149,7 @@ export default function App() {
     rawBufferRef.current = null;
     setAnalysis(null);
     setFixPlan({ changes: [] });
+    setReviewRuleFilter(null);
     setErrorMessage(null);
     setStep('upload');
   }, []);
@@ -144,6 +161,40 @@ export default function App() {
   const handleFixRuleSafe = useCallback((ruleId: string) => {
     setFixPlan((prev) => acceptSafeFixes(prev, ruleId));
   }, []);
+
+  const handleInspectRule = useCallback((ruleId: string) => {
+    setReviewRuleFilter(ruleId);
+    setStep('review');
+  }, []);
+
+  const handleSetChangeStatus = useCallback((changeId: string, status: ChangeStatus) => {
+    setFixPlan((prev) => setChangeStatus(prev, changeId, status));
+  }, []);
+
+  const handleSetRuleStatus = useCallback((ruleId: string, status: ChangeStatus) => {
+    setFixPlan((prev) => setRuleStatus(prev, ruleId, status));
+  }, []);
+
+  const handleRejectAll = useCallback(() => {
+    setFixPlan((prev) => ({
+      changes: prev.changes.map((c) => ({ ...c, status: 'rejected' })),
+    }));
+  }, []);
+
+  // Re-apply accepted changes only when exporting or switching into Export so Step 4 always reflects live decisions.
+  const exportState = useMemo(() => {
+    if (!analysis || step !== 'export') return null;
+    const applied = applyFixes(analysis.parsed, fixPlan);
+    const catalog =
+      applied.changeLog.length > 0
+        ? readCatalog(applied.parsed, analysis.activePlatform)
+        : analysis.catalog;
+    return {
+      parsed: applied.parsed,
+      catalog,
+      changeLog: applied.changeLog,
+    };
+  }, [analysis, fixPlan, step]);
 
   return (
     <div className="min-h-screen bg-white text-neutral-900">
@@ -196,25 +247,33 @@ export default function App() {
             fixPlan={fixPlan}
             onFixAllSafe={handleFixAllSafe}
             onFixRuleSafe={handleFixRuleSafe}
-            onInspectRule={() => setStep('review')}
+            onInspectRule={handleInspectRule}
             onGoToReview={() => setStep('review')}
             onGoToExport={() => setStep('export')}
           />
         )}
 
         {step === 'review' && analysis && (
-          <section className="rounded-lg border border-neutral-200 p-6 text-sm text-neutral-600">
-            <p>
-              {fixPlan.changes.filter((c) => c.status === 'accepted').length} of{' '}
-              {fixPlan.changes.length} proposed changes are queued for review.
-            </p>
-          </section>
+          <ReviewTable
+            fixPlan={fixPlan}
+            selectedRuleId={reviewRuleFilter}
+            onSelectRuleFilter={setReviewRuleFilter}
+            onSetChangeStatus={handleSetChangeStatus}
+            onSetRuleStatus={handleSetRuleStatus}
+            onAcceptAllSafe={handleFixAllSafe}
+            onRejectAll={handleRejectAll}
+            onGoToExport={() => setStep('export')}
+          />
         )}
 
-        {step === 'export' && analysis && (
-          <section className="rounded-lg border border-neutral-200 p-6 text-sm text-neutral-600">
-            <p>Ready to export {analysis.fileName}.</p>
-          </section>
+        {step === 'export' && analysis && exportState && (
+          <ExportPanel
+            fileName={analysis.fileName}
+            parsed={exportState.parsed}
+            catalog={exportState.catalog}
+            changeLog={exportState.changeLog}
+            onDownloadFile={onDownloadFile}
+          />
         )}
 
         <WhyNotChatbot />
