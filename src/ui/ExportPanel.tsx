@@ -21,6 +21,8 @@ interface ExportPanelProps {
   fileName: string;
   parsed: ParsedCsv;
   catalog: CatalogModel;
+  /** Original un-modified catalog used to detect unambiguous currency before price normalization */
+  sourceCatalog?: CatalogModel;
   changeLog: ChangeLogEntry[];
   onDownloadFile?: (payload: DownloadPayload) => void;
 }
@@ -62,10 +64,16 @@ export function ExportPanel({
   fileName,
   parsed,
   catalog,
+  sourceCatalog,
   changeLog,
   onDownloadFile,
 }: ExportPanelProps) {
-  const detectedCurrency = useMemo(() => detectUnambiguousCurrency(catalog), [catalog]);
+  const detectedCurrency = useMemo(
+    () =>
+      detectUnambiguousCurrency(catalog) ??
+      (sourceCatalog ? detectUnambiguousCurrency(sourceCatalog) : null),
+    [catalog, sourceCatalog],
+  );
   const [target, setTarget] = useState<ExportTarget>('same');
   const [storeBaseUrl, setStoreBaseUrl] = useState('');
   const [currencyCode, setCurrencyCode] = useState(detectedCurrency ?? '');

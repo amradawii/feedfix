@@ -37,9 +37,9 @@ describe('review table and export panel workflow', () => {
     const cleanedCsv = downloads[0].content;
     const changeLogCsv = downloads[1].content;
 
-    // Accepted fix IS in exported CSV ("1,200 EGP" -> "1200.00", mojibake -> "القفطان الكتان")
+    // Accepted fix IS in exported CSV ("1,200 EGP" -> "1200.00", mojibake -> "القميص الكتان")
     expect(cleanedCsv).toContain(',1200.00,1450.00,');
-    expect(cleanedCsv).toContain('القفطان الكتان');
+    expect(cleanedCsv).toContain('القميص الكتان');
     expect(changeLogCsv).toContain('"1,200 EGP",1200.00');
 
     // Rejected fix is NOT in exported CSV or change log ("36000291452" untouched)

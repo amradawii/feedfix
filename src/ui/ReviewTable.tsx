@@ -29,28 +29,56 @@ const SEVERITY_DOT: Record<Severity, string> = {
   tip: 'bg-neutral-500',
 };
 
+const ARABIC_RE = /[\u0600-\u06FF]/;
+
+function formatCompactChange(change: ProposedChange): {
+  columnLabel: string;
+  before: string;
+  after: string;
+} {
+  if (change.edits.length === 2 && change.ruleId === 'price.sale-gte-regular') {
+    const [e0, e1] = change.edits;
+    return {
+      columnLabel: `${e0.columnName} / ${e1.columnName}`,
+      before: `${e0.before} / ${e1.before}`,
+      after: `${e0.after} / ${e1.after}`,
+    };
+  }
+  return {
+    columnLabel: change.columnName,
+    before: change.before,
+    after: change.after,
+  };
+}
+
 function DiffCell({ before, after }: { before: string; after: string }) {
   const diff = computeInlineDiff(before, after);
+  const displayPrefix =
+    diff.prefix.length > 22 ? `…${diff.prefix.slice(diff.prefix.length - 16)}` : diff.prefix;
+  const displaySuffix = diff.suffix.length > 22 ? `${diff.suffix.slice(0, 16)}…` : diff.suffix;
+  const beforeFont = ARABIC_RE.test(before) ? 'font-sans text-[13px]' : 'font-mono text-xs';
+  const afterFont = ARABIC_RE.test(after) ? 'font-sans text-[13px]' : 'font-mono text-xs';
+
   return (
-    <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs leading-snug">
-      <span className="max-w-[210px] truncate text-neutral-700" title={before}>
-        <span>{diff.prefix}</span>
+    <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 leading-snug">
+      <span dir="auto" className={`${beforeFont} text-neutral-700`} title={before}>
+        <span>{displayPrefix}</span>
         {diff.removed && (
           <span className="rounded-sm bg-red-50 px-0.5 text-red-700 line-through">
             {diff.removed}
           </span>
         )}
-        <span>{diff.suffix}</span>
+        <span>{displaySuffix}</span>
       </span>
-      <span className="text-neutral-400 select-none" aria-hidden="true">
+      <span className="font-mono text-xs text-neutral-400 select-none" aria-hidden="true">
         &rarr;
       </span>
-      <span className="max-w-[210px] truncate text-neutral-900" title={after}>
-        <span>{diff.prefix}</span>
+      <span dir="auto" className={`${afterFont} text-neutral-900`} title={after}>
+        <span>{displayPrefix}</span>
         {diff.added && (
           <span className="rounded-sm bg-blue-50 px-0.5 font-medium text-accent">{diff.added}</span>
         )}
-        <span>{diff.suffix}</span>
+        <span>{displaySuffix}</span>
       </span>
     </div>
   );
@@ -301,19 +329,19 @@ export function ReviewTable({
             <table className="w-full border-collapse text-left text-sm">
               <thead className="sticky top-0 z-10 border-b border-neutral-200 bg-neutral-50 text-xs font-medium text-neutral-600">
                 <tr>
-                  <th scope="col" className="w-20 px-3 py-2.5">
+                  <th scope="col" className="w-16 px-3 py-2.5">
                     Row
                   </th>
-                  <th scope="col" className="w-44 px-3 py-2.5">
+                  <th scope="col" className="w-40 px-3 py-2.5">
                     Column
                   </th>
                   <th scope="col" className="px-3 py-2.5">
                     Before &rarr; After
                   </th>
-                  <th scope="col" className="w-60 px-3 py-2.5">
+                  <th scope="col" className="w-56 px-3 py-2.5">
                     Rule
                   </th>
-                  <th scope="col" className="w-40 px-3 py-2.5 text-right">
+                  <th scope="col" className="w-36 px-3 py-2.5 text-right">
                     Decision
                   </th>
                 </tr>
@@ -327,6 +355,7 @@ export function ReviewTable({
                 {slice.map((change, idx) => {
                   const absoluteIdx = startIndex + idx;
                   const isFocused = absoluteIdx === focusedIndex;
+                  const display = formatCompactChange(change);
                   return (
                     <tr
                       key={change.id}
@@ -341,13 +370,13 @@ export function ReviewTable({
                         {change.row}
                       </td>
                       <td
-                        className="max-w-[176px] truncate px-3 py-2 font-mono text-xs text-neutral-700"
-                        title={change.columnName}
+                        className="max-w-[160px] truncate px-3 py-2 font-mono text-xs text-neutral-700"
+                        title={display.columnLabel}
                       >
-                        {change.columnName}
+                        {display.columnLabel}
                       </td>
                       <td className="px-3 py-2">
-                        <DiffCell before={change.before} after={change.after} />
+                        <DiffCell before={display.before} after={display.after} />
                       </td>
                       <td className="px-3 py-2 text-xs text-neutral-700">
                         <span className="inline-flex items-center gap-1.5">

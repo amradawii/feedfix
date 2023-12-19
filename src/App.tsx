@@ -9,8 +9,10 @@ import {
 } from './core/fixes';
 import { Platform } from './core/model';
 import { DetectedDelimiter } from './core/parse';
-import { readCatalog } from './core/platforms';
+import { FieldMapping, readCatalog } from './core/platforms';
+import { suggestColumnMapping } from './core/presets';
 import { SampleFeed } from './samples';
+import { ColumnMapper } from './ui/ColumnMapper';
 import { DetectionBar } from './ui/DetectionBar';
 import { DropZone } from './ui/DropZone';
 import { DownloadPayload, ExportPanel } from './ui/ExportPanel';
@@ -37,6 +39,7 @@ export default function App({ onDownloadFile }: AppProps = {}) {
 
   const [step, setStep] = useState<StepId>('upload');
   const [analysis, setAnalysis] = useState<AnalysisResultPayload | null>(null);
+  const [otherMapping, setOtherMapping] = useState<FieldMapping>({});
   const [fixPlan, setFixPlan] = useState<FixPlan>({ changes: [] });
   const [reviewRuleFilter, setReviewRuleFilter] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -57,7 +60,11 @@ export default function App({ onDownloadFile }: AppProps = {}) {
     async (
       buffer: ArrayBuffer,
       fileName: string,
-      options: { delimiter?: DetectedDelimiter; platformOverride?: Platform } = {},
+      options: {
+        delimiter?: DetectedDelimiter;
+        platformOverride?: Platform;
+        otherMapping?: FieldMapping;
+      } = {},
     ) => {
       if (!workerRef.current) return;
       rawBufferRef.current = buffer.slice(0);
@@ -67,9 +74,10 @@ export default function App({ onDownloadFile }: AppProps = {}) {
       setProgressPercent(5);
 
       try {
-        const result = await workerRef.current.parseBuffer(buffer, fileName, {
+        let result = await workerRef.current.parseBuffer(buffer, fileName, {
           delimiter: options.delimiter,
           platformOverride: options.platformOverride,
+          otherMapping: options.otherMapping,
           onProgress: (p) => {
             const suffix =
               p.rowsParsed && p.rowsParsed > 0
@@ -79,6 +87,19 @@ export default function App({ onDownloadFile }: AppProps = {}) {
             setProgressPercent(p.percent);
           },
         });
+
+        let appliedMapping = options.otherMapping ?? {};
+        if (result.activePlatform === 'other' && Object.keys(appliedMapping).length === 0) {
+          appliedMapping = suggestColumnMapping(result.parsed.headers);
+          if (Object.keys(appliedMapping).length > 0) {
+            result = await workerRef.current.recheck(result.parsed, result.fileName, {
+              platformOverride: 'other',
+              otherMapping: appliedMapping,
+            });
+          }
+        }
+
+        setOtherMapping(appliedMapping);
         setAnalysis(result);
         setFixPlan(result.fixPlan);
         setReviewRuleFilter(null);
@@ -119,14 +140,47 @@ export default function App({ onDownloadFile }: AppProps = {}) {
       setIsBusy(true);
       setErrorMessage(null);
       try {
+        const mappingForOther =
+          nextPlatform === 'other'
+            ? Object.keys(otherMapping).length > 0
+              ? otherMapping
+              : suggestColumnMapping(analysis.parsed.headers)
+            : undefined;
+        if (mappingForOther) {
+          setOtherMapping(mappingForOther);
+        }
         const result = await workerRef.current.recheck(analysis.parsed, analysis.fileName, {
           platformOverride: nextPlatform,
+          otherMapping: mappingForOther,
         });
         setAnalysis(result);
         setFixPlan(result.fixPlan);
         setReviewRuleFilter(null);
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : 'Could not switch format.');
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [analysis, otherMapping],
+  );
+
+  const handleApplyOtherMapping = useCallback(
+    async (nextMapping: FieldMapping) => {
+      if (!analysis || !workerRef.current) return;
+      setOtherMapping(nextMapping);
+      setIsBusy(true);
+      setErrorMessage(null);
+      try {
+        const result = await workerRef.current.recheck(analysis.parsed, analysis.fileName, {
+          platformOverride: 'other',
+          otherMapping: nextMapping,
+        });
+        setAnalysis(result);
+        setFixPlan(result.fixPlan);
+        setReviewRuleFilter(null);
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Could not apply mapping.');
       } finally {
         setIsBusy(false);
       }
@@ -140,14 +194,16 @@ export default function App({ onDownloadFile }: AppProps = {}) {
       void runParse(rawBufferRef.current.slice(0), analysis.fileName, {
         delimiter: nextDelimiter,
         platformOverride: analysis.activePlatform,
+        otherMapping: analysis.activePlatform === 'other' ? otherMapping : undefined,
       });
     },
-    [analysis, runParse],
+    [analysis, otherMapping, runParse],
   );
 
   const handleReset = useCallback(() => {
     rawBufferRef.current = null;
     setAnalysis(null);
+    setOtherMapping({});
     setFixPlan({ changes: [] });
     setReviewRuleFilter(null);
     setErrorMessage(null);
@@ -181,20 +237,23 @@ export default function App({ onDownloadFile }: AppProps = {}) {
     }));
   }, []);
 
-  // Re-apply accepted changes only when exporting or switching into Export so Step 4 always reflects live decisions.
   const exportState = useMemo(() => {
     if (!analysis || step !== 'export') return null;
     const applied = applyFixes(analysis.parsed, fixPlan);
     const catalog =
       applied.changeLog.length > 0
-        ? readCatalog(applied.parsed, analysis.activePlatform)
+        ? readCatalog(
+            applied.parsed,
+            analysis.activePlatform,
+            analysis.activePlatform === 'other' ? otherMapping : undefined,
+          )
         : analysis.catalog;
     return {
       parsed: applied.parsed,
       catalog,
       changeLog: applied.changeLog,
     };
-  }, [analysis, fixPlan, step]);
+  }, [analysis, fixPlan, otherMapping, step]);
 
   return (
     <div className="min-h-screen bg-white text-neutral-900">
@@ -241,16 +300,27 @@ export default function App({ onDownloadFile }: AppProps = {}) {
         )}
 
         {step === 'problems' && analysis && (
-          <ProblemsList
-            groups={analysis.rules.groups}
-            counts={analysis.rules.counts}
-            fixPlan={fixPlan}
-            onFixAllSafe={handleFixAllSafe}
-            onFixRuleSafe={handleFixRuleSafe}
-            onInspectRule={handleInspectRule}
-            onGoToReview={() => setStep('review')}
-            onGoToExport={() => setStep('export')}
-          />
+          <>
+            {analysis.activePlatform === 'other' && (
+              <ColumnMapper
+                headers={analysis.parsed.headers}
+                sampleRow={analysis.parsed.rows[0] ?? []}
+                mapping={otherMapping}
+                isBusy={isBusy}
+                onApplyMapping={(m) => void handleApplyOtherMapping(m)}
+              />
+            )}
+            <ProblemsList
+              groups={analysis.rules.groups}
+              counts={analysis.rules.counts}
+              fixPlan={fixPlan}
+              onFixAllSafe={handleFixAllSafe}
+              onFixRuleSafe={handleFixRuleSafe}
+              onInspectRule={handleInspectRule}
+              onGoToReview={() => setStep('review')}
+              onGoToExport={() => setStep('export')}
+            />
+          </>
         )}
 
         {step === 'review' && analysis && (
@@ -271,6 +341,7 @@ export default function App({ onDownloadFile }: AppProps = {}) {
             fileName={analysis.fileName}
             parsed={exportState.parsed}
             catalog={exportState.catalog}
+            sourceCatalog={analysis.catalog}
             changeLog={exportState.changeLog}
             onDownloadFile={onDownloadFile}
           />

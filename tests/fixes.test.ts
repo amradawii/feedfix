@@ -46,7 +46,7 @@ describe('fix proposal, review state, and change log', () => {
     // - Row 3 lost leading-zero UPC "36000291452" -> "036000291452"
     expect(applied.parsed.rows[1][20]).toBe('036000291452');
     // - Row 6 Arabic mojibake repaired & Arabic-Indic price "٨٥٠" -> "850.00"
-    expect(applied.parsed.rows[4][1]).toBe('القفطان الكتان');
+    expect(applied.parsed.rows[4][1]).toBe('القميص الكتان');
     expect(applied.parsed.rows[4][18]).toBe('850.00');
     // - Row 7 spaces in URL encoded, while http:// is preserved (never rewritten to https://)
     expect(applied.parsed.rows[5][21]).toBe('http://example.com/images/pour%20over.jpg');

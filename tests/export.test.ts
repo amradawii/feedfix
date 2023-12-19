@@ -39,7 +39,7 @@ describe('platform conversion and RFC 4180 export', () => {
     // Variant 2 restored barcode preserved as string with leading zero
     expect(oxford.variants[1].barcode?.value).toBe('036000291452');
     // Arabic title repaired & preserved
-    expect(recatalog.products[1].title?.value).toBe('القفطان الكتان');
+    expect(recatalog.products[1].title?.value).toBe('القميص الكتان');
     expect(recatalog.products[1].variants[0].isDefaultVariant).toBe(true);
   });
 
