@@ -31,7 +31,7 @@ FeedFix is a free, browser-based tool that finds and fixes problems in product C
 | Sale price higher than regular price      | Columns swapped                                                    | Flags it and offers an opt-in swap                                                 |
 | Duplicate SKUs, IDs or split handles      | Copy-paste or unsorted rows                                        | Lists every duplicate group                                                        |
 | Google rejects items                      | Missing `brand`/`gtin`, wrong `availability`, promo text in titles | Platform checks with exact allowed values                                          |
-| Moving stores (Woo ↔ Shopify ↔ Google)  | Different columns and variant models                               | Converts via one product model and reports what is missing or omitted              |
+| Moving stores (Woo ↔ Shopify ↔ Google)    | Different columns and variant models                               | Converts via one product model and reports what is missing or omitted              |
 
 ## Why not just ask a chatbot?
 
@@ -65,7 +65,7 @@ Everything runs locally in your browser: CSV decoding, parsing, and rule checks 
 
 ## Run locally
 
-Requires **Node.js 20 LTS** (or Docker with `node:20`).
+Requires **Node.js 24 LTS** (or Docker with `node:24`).
 
 ```bash
 npm install

@@ -435,8 +435,8 @@ export function writeShopifyCatalog(catalog: CatalogModel): {
       product.published?.value.toUpperCase() === 'FALSE'
         ? 'FALSE'
         : product.published?.value.toUpperCase() === 'TRUE'
-        ? 'TRUE'
-        : published;
+          ? 'TRUE'
+          : published;
 
     const productOptions = product.options.slice(0, SHOPIFY_MAX_OPTIONS_2023);
     const variants: Variant[] =
@@ -487,7 +487,7 @@ export function writeShopifyCatalog(catalog: CatalogModel): {
       const grams =
         variant.weightGrams !== undefined && variant.weightGrams !== null
           ? String(variant.weightGrams)
-          : variant.weight?.value ?? '';
+          : (variant.weight?.value ?? '');
 
       const qty = variant.inventoryQty?.value ?? '';
       const tracker = variant.inventoryTracker?.value ?? (qty ? 'shopify' : '');
@@ -496,11 +496,11 @@ export function writeShopifyCatalog(catalog: CatalogModel): {
 
       const row = [
         handle,
-        isFirst ? product.title?.value ?? '' : '',
-        isFirst ? product.descriptionHtml?.value ?? '' : '',
-        isFirst ? product.vendor?.value ?? '' : '',
-        isFirst ? product.productCategory?.value ?? '' : '',
-        isFirst ? product.productType?.value ?? '' : '',
+        isFirst ? (product.title?.value ?? '') : '',
+        isFirst ? (product.descriptionHtml?.value ?? '') : '',
+        isFirst ? (product.vendor?.value ?? '') : '',
+        isFirst ? (product.productCategory?.value ?? '') : '',
+        isFirst ? (product.productType?.value ?? '') : '',
         isFirst ? product.tags.map((t) => t.value).join(', ') : '',
         isFirst ? finalPublished : '',
         isFirst ? optNames[0] : optNames[0] ? optNames[0] : '',
@@ -518,9 +518,9 @@ export function writeShopifyCatalog(catalog: CatalogModel): {
         variantPrice,
         compareAtPrice,
         variant.barcode?.value ?? '',
-        isFirst ? firstImage?.url.value ?? '' : '',
-        isFirst && firstImage ? firstImage.position?.value ?? '1' : '',
-        isFirst ? firstImage?.alt?.value ?? '' : '',
+        isFirst ? (firstImage?.url.value ?? '') : '',
+        isFirst && firstImage ? (firstImage.position?.value ?? '1') : '',
+        isFirst ? (firstImage?.alt?.value ?? '') : '',
         variant.image && variant.image.value !== firstImage?.url.value ? variant.image.value : '',
         grams ? 'g' : '',
         isFirst ? status : '',

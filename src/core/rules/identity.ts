@@ -170,8 +170,8 @@ export const identityEmptyVariantSkuRule: RuleRunner = {
       skuCol !== undefined
         ? catalog.headers[skuCol]
         : catalog.platform === 'shopify'
-        ? 'Variant SKU'
-        : 'SKU';
+          ? 'Variant SKU'
+          : 'SKU';
 
     for (const product of catalog.products) {
       if (product.variants.length <= 1) continue;

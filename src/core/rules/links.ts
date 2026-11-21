@@ -222,8 +222,8 @@ export const linksMissingImageRule: RuleRunner = {
       catalog.platform === 'shopify'
         ? catalog.columnMap.imageSrc
         : catalog.platform === 'woocommerce'
-        ? catalog.columnMap.images
-        : catalog.columnMap.image;
+          ? catalog.columnMap.images
+          : catalog.columnMap.image;
     if (imageCol === undefined) return [];
 
     const problems: Problem[] = [];

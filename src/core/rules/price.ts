@@ -187,7 +187,7 @@ export function parsePriceValue(raw: string): PriceParseResult {
     hadExtraText = true;
   }
 
-  let intPart = '';
+  let intPart: string;
   let fracPart = '';
   let hadDecimalComma = false;
   let hadThousandsSeparator = false;

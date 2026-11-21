@@ -120,13 +120,20 @@ export function ReviewTable({
     });
   }, [fixPlan.changes, selectedRuleId, statusFilter]);
 
-  useEffect(() => {
+  const filterKey = `${selectedRuleId ?? ''}|${statusFilter}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey);
     setScrollTop(0);
     setFocusedIndex(0);
+  }
+
+  useEffect(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
     }
-  }, [selectedRuleId, statusFilter]);
+  }, [filterKey]);
 
   const counts = countFixStatuses(fixPlan);
 

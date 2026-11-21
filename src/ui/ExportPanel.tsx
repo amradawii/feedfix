@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   analyzeConversion,
   ConversionNotice,
@@ -77,12 +77,14 @@ export function ExportPanel({
   const [target, setTarget] = useState<ExportTarget>('same');
   const [storeBaseUrl, setStoreBaseUrl] = useState('');
   const [currencyCode, setCurrencyCode] = useState(detectedCurrency ?? '');
+  const [prevDetectedCurrency, setPrevDetectedCurrency] = useState(detectedCurrency);
   const [includeBom, setIncludeBom] = useState(() => hasArabicInParsed(parsed));
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  useEffect(() => {
+  if (prevDetectedCurrency !== detectedCurrency) {
+    setPrevDetectedCurrency(detectedCurrency);
     setCurrencyCode(detectedCurrency ?? '');
-  }, [detectedCurrency]);
+  }
 
   const report = useMemo(
     () =>

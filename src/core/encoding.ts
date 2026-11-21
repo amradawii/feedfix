@@ -1,10 +1,5 @@
 export type DetectedEncoding =
-  | 'utf-8'
-  | 'utf-8-bom'
-  | 'utf-16le'
-  | 'utf-16be'
-  | 'windows-1256'
-  | 'windows-1252';
+  'utf-8' | 'utf-8-bom' | 'utf-16le' | 'utf-16be' | 'windows-1256' | 'windows-1252';
 
 export interface DecodeResult {
   text: string;

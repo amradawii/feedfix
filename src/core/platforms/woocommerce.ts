@@ -482,7 +482,7 @@ export function writeWooCommerceCatalog(catalog: CatalogModel): {
     const categories =
       product.categories.length > 0
         ? product.categories.map((c) => c.value).join(', ')
-        : product.productCategory?.value ?? product.productType?.value ?? '';
+        : (product.productCategory?.value ?? product.productType?.value ?? '');
     const tags = product.tags.map((t) => t.value).join(', ');
     const images = product.images.map((img) => img.url.value).join(', ');
 
@@ -572,7 +572,7 @@ export function writeWooCommerceCatalog(catalog: CatalogModel): {
       const varName =
         product.title?.value && suffix
           ? `${product.title.value} - ${suffix}`
-          : product.title?.value ?? '';
+          : (product.title?.value ?? '');
 
       const varRow = [
         variant.id?.value ?? '',

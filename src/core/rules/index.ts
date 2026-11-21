@@ -58,7 +58,9 @@ export function runRules(
   catalog: CatalogModel,
   optionsOrRules?: RunRulesOptions | RuleRunner[],
 ): RuleEngineResult {
-  const rules = Array.isArray(optionsOrRules) ? optionsOrRules : optionsOrRules?.rules ?? ALL_RULES;
+  const rules = Array.isArray(optionsOrRules)
+    ? optionsOrRules
+    : (optionsOrRules?.rules ?? ALL_RULES);
   const googleTaxonomy = Array.isArray(optionsOrRules) ? undefined : optionsOrRules?.googleTaxonomy;
 
   const problems: Problem[] = [];

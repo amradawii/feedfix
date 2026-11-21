@@ -87,7 +87,7 @@ export function exportCatalog(
 
   let headers: string[];
   let rows: string[][];
-  let delimiter: ',' | '\t' = ',';
+  let delimiter: ',' | '\t';
   let suffix: string;
 
   if (target === 'same') {

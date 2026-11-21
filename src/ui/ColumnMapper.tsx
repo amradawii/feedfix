@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { FieldMapping } from '../core/platforms';
 import {
   deleteMappingPreset,
@@ -27,15 +27,17 @@ export function ColumnMapper({
   onApplyMapping,
 }: ColumnMapperProps) {
   const [draft, setDraft] = useState<FieldMapping>(mapping);
+  const [prevMapping, setPrevMapping] = useState<FieldMapping>(mapping);
   const [presets, setPresets] = useState<MappingPreset[]>(() => loadMappingPresets());
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [presetName, setPresetName] = useState('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(true);
 
-  useEffect(() => {
+  if (prevMapping !== mapping) {
+    setPrevMapping(mapping);
     setDraft(mapping);
-  }, [mapping]);
+  }
 
   const mappedCount = Object.values(draft).filter((v) => v !== undefined).length;
 

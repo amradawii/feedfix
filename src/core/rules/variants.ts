@@ -110,20 +110,18 @@ export const variantsWooOrphanVariationRule: RuleRunner = {
         (iss) =>
           iss.kind === 'woo_orphan_variation' || iss.kind === 'woo_variation_parent_not_variable',
       )
-      .map(
-        (iss): Problem => ({
-          id: createProblemId('variants.woo-orphan-variation', iss.row, iss.col),
-          ruleId: 'variants.woo-orphan-variation',
-          group: 'variants',
-          severity: 'fail',
-          title: 'WooCommerce variation has no matching parent',
-          message: iss.detail,
-          row: iss.row,
-          col: iss.col,
-          columnName: iss.columnName,
-          rawValue: iss.rawValue,
-        }),
-      );
+      .map((iss): Problem => ({
+        id: createProblemId('variants.woo-orphan-variation', iss.row, iss.col),
+        ruleId: 'variants.woo-orphan-variation',
+        group: 'variants',
+        severity: 'fail',
+        title: 'WooCommerce variation has no matching parent',
+        message: iss.detail,
+        row: iss.row,
+        col: iss.col,
+        columnName: iss.columnName,
+        rawValue: iss.rawValue,
+      }));
   },
 };
 

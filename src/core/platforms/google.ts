@@ -364,7 +364,7 @@ export function writeGoogleCatalog(
     const isMultiVariant = variants.length > 1;
     const groupId =
       product.itemGroupId?.value ??
-      (isMultiVariant ? product.handle?.value ?? product.id?.value ?? `group-${pIdx + 1}` : '');
+      (isMultiVariant ? (product.handle?.value ?? product.id?.value ?? `group-${pIdx + 1}`) : '');
 
     const description = stripHtmlForGoogle(
       product.descriptionHtml?.value ?? product.shortDescription?.value,
@@ -382,7 +382,7 @@ export function writeGoogleCatalog(
         variant.sku?.value ??
         (isMultiVariant && product.handle?.value
           ? `${product.handle.value}-${vIdx + 1}`
-          : product.handle?.value ?? '');
+          : (product.handle?.value ?? ''));
 
       const primaryImage = variant.image?.value ?? productImages[0] ?? '';
       const additionalImages = productImages.filter((u) => u !== primaryImage).join(', ');
@@ -391,7 +391,7 @@ export function writeGoogleCatalog(
       const weight =
         variant.weightGrams !== undefined && variant.weightGrams !== null
           ? `${variant.weightGrams} g`
-          : variant.weight?.value ?? '';
+          : (variant.weight?.value ?? '');
 
       rows.push([
         itemId,

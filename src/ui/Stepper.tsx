@@ -59,8 +59,8 @@ export function Stepper({ currentStep, hasFile, onSelectStep }: StepperProps) {
                 isActive
                   ? 'font-semibold text-accent'
                   : isDisabled
-                  ? 'cursor-not-allowed text-neutral-400'
-                  : 'text-neutral-600 hover:text-neutral-900',
+                    ? 'cursor-not-allowed text-neutral-400'
+                    : 'text-neutral-600 hover:text-neutral-900',
               ].join(' ')}
             >
               <span className="tabular-nums">{step.number}</span> {step.label}

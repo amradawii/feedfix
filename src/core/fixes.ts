@@ -309,7 +309,7 @@ export function applyFixes(parsed: ParsedCsv, plan: FixPlan): ApplyFixesResult {
         continue;
       }
 
-      let nextValue: string | null = null;
+      let nextValue: string;
       if (current === edit.before) {
         nextValue = edit.after;
       } else if (change.ruleId === 'text.whitespace') {

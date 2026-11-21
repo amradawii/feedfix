@@ -250,12 +250,12 @@ export function analyzeConversion(
               missingLink === 1 ? '' : 's'
             }: WooCommerce CSVs do not contain product URLs.`
           : catalog.platform === 'shopify'
-          ? `Google needs link for ${missingLink} item${
-              missingLink === 1 ? '' : 's'
-            }: enter your Store base URL to build /products/<handle> links.`
-          : `Google needs link for ${missingLink} item${
-              missingLink === 1 ? '' : 's'
-            }: no URL column found.`;
+            ? `Google needs link for ${missingLink} item${
+                missingLink === 1 ? '' : 's'
+              }: enter your Store base URL to build /products/<handle> links.`
+            : `Google needs link for ${missingLink} item${
+                missingLink === 1 ? '' : 's'
+              }: no URL column found.`;
       notices.push({ kind: 'missing', field: 'link', count: missingLink, message: linkMsg });
     }
 
